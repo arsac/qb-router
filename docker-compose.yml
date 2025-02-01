@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - shared-data:/data
+      - ./tmp:/dest
+      - ./app:/app
+    environment:
+      - SRC_PATH=/data/
+      - DEST_PATH=/dest
+      - QB_SRC_URL=https://qb.mlxa.dev
+      - QB_DEST_URL=http://10.0.10.4:30024/
+
+  test:
+    image: busybox
+    command: sh -c "while true; do echo 'test file' > /data/testfile_$(date +%s).txt; sleep 10; done"
+    volumes:
+      - shared-data:/data
+
+volumes:
+  shared-data:
