@@ -1,6 +1,5 @@
 import asyncio
 import os
-import tempfile
 
 from qb import QB, QBManager
 # from rsync import RSyncListen

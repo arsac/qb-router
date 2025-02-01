@@ -88,6 +88,9 @@ class QBManager:
 
                 self.qb.remove_torrent(torrent['hash'])
 
+        else:
+            print("No torrents to move...")
+
     async def start(self):
         signal.signal(signal.SIGINT, self.handle_signal)
         while self._run:
@@ -97,8 +100,8 @@ class QBManager:
             except Exception as e:
                 print(f"Error moving torrents: {e}")
             finally:
-                #  Only run every 5 minutes to avoid hammering the API and allow for sigint interrupts
-                time.sleep(300)
+                #  Only run every minute to avoid hammering the API and allow for sigint interrupts
+                time.sleep(60)
 
 
 def _login(url, username, password):
