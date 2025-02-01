@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import os
+import signal
 import sys
+from asyncio import Event
 
 from qb import QBManager
 # from rsync import RSyncListen
@@ -23,7 +25,7 @@ if not QB_SRC_URL or not QB_DEST_URL:
 async def main():
     logging.basicConfig(
         stream=sys.stdout,
-        level=logging.INFO,
+        level=logging.DEBUG if os.environ.get('DEBUG', None) else logging.INFO,
         format="%(asctime)s %(levelname)s: %(message)s",
         datefmt="%I:%M:%S %p",
     )
@@ -32,6 +34,7 @@ async def main():
     logging.info(f"DEST_PATH: {DEST_PATH}")
     logging.info(f"QB_SRC_URL: {QB_SRC_URL}")
     logging.info(f"QB_DEST_URL: {QB_DEST_URL}")
+
     # listener = RSyncListen(SRC_PATH, DEST_PATH, logger)
     qb_manager = QBManager(QB_SRC_URL, '', '', QB_DEST_URL, '', '', DEST_PATH, logger)
 

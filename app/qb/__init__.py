@@ -1,14 +1,35 @@
+import asyncio
 import os
 import signal
 import time
 
+import expiringdict
 import requests
+
+SYNCED_TAG = 'synced'
+COMPLETED_STATES = ['stalledUP', 'pausedUP', 'uploading', 'queuedUP', 'forcedUP']
+
+
+def has_synced_tag(torrent):
+    return SYNCED_TAG in map(str.strip, torrent['tags'].split(','))
+
+
+def is_completed(torrent):
+    return torrent['state'] in COMPLETED_STATES
 
 
 class QBManager:
     _run = True
 
-    def __init__(self, source_url, source_username, source_password, dest_url, dest_username, dest_password, dest_path, logger):
+    def __init__(self, source_url, source_username, source_password, dest_url, dest_username, dest_password, dest_path,
+                 logger):
+
+        self._torrent_files = expiringdict.ExpiringDict(max_len=2000, max_age_seconds=10)
+        self._cache = expiringdict.ExpiringDict(max_len=100, max_age_seconds=60)
+
+        self._torrents = None
+        self._config = None
+
         self.qb = QB(
             source_url=source_url,
             source_username=source_username,
@@ -20,53 +41,97 @@ class QBManager:
         self.dest_path = dest_path
         self.logger = logger
 
+    # Method to fetch config from qbittorrent and cache for up to a minute
+    def get_config(self, key):
+        config = self._cache.get("config")
+        if not config:
+            config = self.qb.get_source_config()
+            self._cache["config"] = config
+
+        if key in config:
+            return config[key]
+
+        raise KeyError(f"Key {key} not found in config")
+
+    # Method to fetch all torrents and cache for up to a minute
+    def get_torrents(self, force=False):
+        torrents = self._cache.get("torrents")
+        if not torrents or force:
+            torrents = self.qb.list_torrents()
+            self._cache["torrents"] = torrents
+        return torrents
+
+    def get_completed_torrents(self):
+        return [t for t in self.get_torrents() if is_completed(t)]
+
+    # Method to fetch all files for a torrent and cache for up to a minute if a response is received, using the torrent hash as the key
+    def get_torrent_files(self, torrent_hash):
+        if self._torrent_files.get(torrent_hash):
+            return self._torrent_files[torrent_hash]
+
+        self.logger.debug("Cache expired, fetching torrent files...")
+        self._torrent_files[torrent_hash] = self.qb.list_completed_files(torrent_hash)
+        return self._torrent_files[torrent_hash]
+
     def handle_signal(self, signum, frame):
         self.logger.info(f"Received signal {signum}, shutting down...")
         self._run = False
 
-    def move_torrents(self):
-        config = self.qb.get_source_config()
+    def is_synced(self, torrent):
+        files = self.get_torrent_files(torrent['hash'])
 
-        config_save_path = config['save_path']
+        save_path = self.get_config('save_path')
+
+        self.logger.debug(f"Tags: {torrent['tags']}")
+        for file in files:
+            content_file_path = os.path.join(torrent['save_path'], file['name'])
+            relative_content_path = content_file_path[len(save_path) + 1:]
+            dest_content_file_path = os.path.join(self.dest_path, relative_content_path)
+
+            if not os.path.exists(dest_content_file_path):
+                self.logger.debug(f"Torrent missing dest file: {dest_content_file_path}")
+                return False
+
+        return True
+
+    def tag_synced_torrents(self):
+        untagged_torrents = [t for t in self.get_completed_torrents() if not has_synced_tag(t)]
+
+        if untagged_torrents:
+            self.logger.info(f"Checking for synced torrents...")
+            for torrent in untagged_torrents:
+                if self.is_synced(torrent):
+                    self.logger.info(f"Tagging synced torrent: {torrent['name']}...")
+                    self.qb.tag_torrent(torrent['hash'], SYNCED_TAG)
+        else:
+            self.logger.info("No untagged torrents...")
+
+    def move_torrents(self):
+        config_save_path = self.get_config('save_path')
 
         # Get all stalled torrents that are not popular, are larger than 20GB and have been seeding for more than an hour
-        torrents = [t for t in self.qb.list_stalled_up() if
-                    t['popularity'] == 0
+        torrents = [t for t in self.get_completed_torrents() if
+                    has_synced_tag(t)
+                    and t['popularity'] == 0
                     and t['size'] > 21474836480
                     and t['seeding_time'] > 3600]
 
         if torrents:
             for torrent in torrents:
                 self.logger.info(f"Processing: {torrent['name']}...")
-                files = self.qb.list_completed_files(torrent['hash'])
-                save_path = torrent['save_path']
 
-                existing_file_count = 0
-
-                for file in files:
-                    content_file_path = os.path.join(save_path, file['name'])
-                    relative_content_path = content_file_path[len(config_save_path) + 1:]
-                    dest_content_file_path = os.path.join(self.dest_path, relative_content_path)
-
-                    if os.path.exists(dest_content_file_path):
-                        existing_file_count += 1
-
-                if existing_file_count != len(files):
-                    self.logger.info(f"Not all files are present on destination: {torrent['name']}...")
-                    continue
+                if not self.is_synced(torrent):
+                    self.logger.info(f"Torrent not synced yet: {torrent['name']}")
 
                 self.logger.info(f"Moving torrent: {torrent['name']}...")
 
-                dest_torrent = self.qb.find_dest_torrent(torrent['hash'])
-
-                if dest_torrent:
+                if self.qb.find_dest_torrent(torrent['hash']):
                     self.logger.info(f"Torrent already exists in destination, removing: {torrent['name']}")
                     self.qb.remove_torrent(torrent['hash'])
-                    print(dest_torrent)
                     continue
 
                 if torrent['state'] != 'stoppedUP':
-                    print(f"Stopping torrent: {torrent['name']}#{torrent['hash']}")
+                    self.logger.debug(f"Stopping torrent: {torrent['name']}#{torrent['hash']}")
                     self.qb.stop_torrent(torrent['hash'])
                     time.sleep(5)
 
@@ -84,7 +149,8 @@ class QBManager:
                         self.logger.info(f"Timeout reached while waiting for torrent to move: {torrent['name']}")
                         break
 
-                    self.logger.info(f"Waiting for torrent to move: {torrent['name']} [state: {dest_torrent['state']}]...")
+                    self.logger.info(
+                        f"Waiting for torrent to move: {torrent['name']} [state: {dest_torrent['state']}]...")
                     time.sleep(1)
 
                 self.qb.remove_torrent(torrent['hash'])
@@ -95,14 +161,15 @@ class QBManager:
     async def start(self):
         signal.signal(signal.SIGINT, self.handle_signal)
         while self._run:
-            self.logger.info("Checking for torrents that can be moved...")
+            self.logger.debug("Running torrent tasks...")
             try:
+                self.tag_synced_torrents()
                 self.move_torrents()
             except Exception as e:
-                self.logger.error(f"Error moving torrents: {e}")
+                self.logger.error(f"Error while processing torrents: {e}")
             finally:
                 #  Only run every minute to avoid hammering the API and allow for sigint interrupts
-                time.sleep(60)
+                await asyncio.sleep(20)
 
 
 def _login(url, username, password):
@@ -119,6 +186,11 @@ class QB:
         self.source_session = _login(source_url, source_username, source_password)
         self.dest_url = dest_url
         self.dest_session = _login(dest_url, dest_username, dest_password)
+
+    def tag_torrent(self, torrent_hash, tag):
+        response = self.source_session.post(f'{self.source_url}/api/v2/torrents/addTags',
+                                            data={'hashes': torrent_hash, 'tags': tag})
+        response.raise_for_status()
 
     # Method to retrieve qbittorrent configuration
     def get_source_config(self):

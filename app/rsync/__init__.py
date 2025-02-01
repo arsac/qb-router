@@ -2,7 +2,9 @@ import asyncio
 import signal
 import subprocess
 import time
+
 from asyncinotify import Inotify, Mask
+
 
 class RSyncListen:
     queue = asyncio.Queue()
@@ -16,7 +18,7 @@ class RSyncListen:
         signal.signal(signal.SIGINT, self.handle_signal)
 
     def handle_signal(self, signum, frame):
-        print(f"Received signal {signum}, shutting down...")
+        self.logger.info(f"Received signal {signum}, shutting down rsync...")
         self._run = False
 
     def rsync(self):
@@ -27,9 +29,9 @@ class RSyncListen:
             result = subprocess.run(['rsync', '--ignore-existing', '-razv', self.source, self.destination], check=True,
                                     capture_output=True,
                                     text=True)
-            print(result.stdout)
+            self.logger.info(result.stdout)
         except subprocess.CalledProcessError as e:
-            print(f"Error during rsync: {e.stderr}")
+            self.logger.error(f"Error during rsync: {e.stderr}")
 
     async def worker(self):
         while self._run or not self.queue.empty():
@@ -46,10 +48,10 @@ class RSyncListen:
 
             if batch:
                 for e in batch:
-                    print(f"Event: {e.path}")
+                    self.logger.debug(f"Event: {e.path}")
 
                 self.rsync()
-                print(f'Worker processed: {len(batch)} events')
+                self.logger.info(f'Worker processed: {len(batch)} events')
 
     async def start(self):
         worker_task = asyncio.create_task(self.worker())
