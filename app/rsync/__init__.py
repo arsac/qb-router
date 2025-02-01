@@ -2,23 +2,24 @@ import asyncio
 import signal
 import subprocess
 import time
-
 from asyncinotify import Inotify, Mask
 
+class RSyncListen:
+    queue = asyncio.Queue()
 
-class RSync:
-    def __init__(self, source, destination):
-        """
-        Initializes the RsyncWrapper with source and destination directories.
+    _run = True
 
-        Args:
-            source (str): The source directory to copy from.
-            destination (str): The destination directory to copy to.
-        """
+    def __init__(self, source, destination, logger):
         self.source = source
         self.destination = destination
+        self.logger = logger
+        signal.signal(signal.SIGINT, self.handle_signal)
 
-    def run(self):
+    def handle_signal(self, signum, frame):
+        print(f"Received signal {signum}, shutting down...")
+        self._run = False
+
+    def rsync(self):
         """
         Executes the rsync command to copy files recursively from the source to the destination.
         """
@@ -29,22 +30,6 @@ class RSync:
             print(result.stdout)
         except subprocess.CalledProcessError as e:
             print(f"Error during rsync: {e.stderr}")
-
-
-class RSyncListen:
-    queue = asyncio.Queue()
-
-    _run = True
-
-    def __init__(self, source, destination):
-        self.source = source
-        self.destination = destination
-        self.rsync = RSync(source, destination)
-        signal.signal(signal.SIGINT, self.handle_signal)
-
-    def handle_signal(self, signum, frame):
-        print(f"Received signal {signum}, shutting down...")
-        self._run = False
 
     async def worker(self):
         while self._run or not self.queue.empty():
@@ -63,7 +48,7 @@ class RSyncListen:
                 for e in batch:
                     print(f"Event: {e.path}")
 
-                self.rsync.run()
+                self.rsync()
                 print(f'Worker processed: {len(batch)} events')
 
     async def start(self):

@@ -8,7 +8,7 @@ import requests
 class QBManager:
     _run = True
 
-    def __init__(self, source_url, source_username, source_password, dest_url, dest_username, dest_password, dest_path):
+    def __init__(self, source_url, source_username, source_password, dest_url, dest_username, dest_password, dest_path, logger):
         self.qb = QB(
             source_url=source_url,
             source_username=source_username,
@@ -18,9 +18,10 @@ class QBManager:
             dest_password=dest_password
         )
         self.dest_path = dest_path
+        self.logger = logger
 
     def handle_signal(self, signum, frame):
-        print(f"Received signal {signum}, shutting down...")
+        self.logger.info(f"Received signal {signum}, shutting down...")
         self._run = False
 
     def move_torrents(self):
@@ -36,7 +37,7 @@ class QBManager:
 
         if torrents:
             for torrent in torrents:
-                print(f"Processing: {torrent['name']}...")
+                self.logger.info(f"Processing: {torrent['name']}...")
                 files = self.qb.list_completed_files(torrent['hash'])
                 save_path = torrent['save_path']
 
@@ -51,15 +52,15 @@ class QBManager:
                         existing_file_count += 1
 
                 if existing_file_count != len(files):
-                    print(f"Not all files are present on destination: {torrent['name']}...")
+                    self.logger.info(f"Not all files are present on destination: {torrent['name']}...")
                     continue
 
-                print(f"Moving torrent: {torrent['name']}...")
+                self.logger.info(f"Moving torrent: {torrent['name']}...")
 
                 dest_torrent = self.qb.find_dest_torrent(torrent['hash'])
 
                 if dest_torrent:
-                    print(f"Torrent already exists in destination, removing: {torrent['name']}")
+                    self.logger.info(f"Torrent already exists in destination, removing: {torrent['name']}")
                     self.qb.remove_torrent(torrent['hash'])
                     print(dest_torrent)
                     continue
@@ -80,25 +81,25 @@ class QBManager:
                         break
 
                     if time.time() > timeout:
-                        print(f"Timeout reached while waiting for torrent to move: {torrent['name']}")
+                        self.logger.info(f"Timeout reached while waiting for torrent to move: {torrent['name']}")
                         break
 
-                    print(f"Waiting for torrent to move: {torrent['name']} [state: {dest_torrent['state']}]...")
+                    self.logger.info(f"Waiting for torrent to move: {torrent['name']} [state: {dest_torrent['state']}]...")
                     time.sleep(1)
 
                 self.qb.remove_torrent(torrent['hash'])
 
         else:
-            print("No torrents to move...")
+            self.logger.info("No torrents to move...")
 
     async def start(self):
         signal.signal(signal.SIGINT, self.handle_signal)
         while self._run:
-            print("Checking for torrents that can be moved...")
+            self.logger.info("Checking for torrents that can be moved...")
             try:
                 self.move_torrents()
             except Exception as e:
-                print(f"Error moving torrents: {e}")
+                self.logger.error(f"Error moving torrents: {e}")
             finally:
                 #  Only run every minute to avoid hammering the API and allow for sigint interrupts
                 time.sleep(60)
