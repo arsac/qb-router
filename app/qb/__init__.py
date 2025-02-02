@@ -27,9 +27,6 @@ class QBManager:
         self._torrent_files = expiringdict.ExpiringDict(max_len=2000, max_age_seconds=10)
         self._cache = expiringdict.ExpiringDict(max_len=100, max_age_seconds=60)
 
-        self._torrents = None
-        self._config = None
-
         self.qb = QB(
             source_url=source_url,
             source_username=source_username,
@@ -52,6 +49,17 @@ class QBManager:
             return config[key]
 
         raise KeyError(f"Key {key} not found in config")
+
+    def get_maindata(self, key):
+        maindata = self._cache.get("maindata")
+        if not maindata:
+            maindata = self.qb.get_maindata()
+            self._cache["maindata"] = maindata
+
+        if key in maindata:
+            return maindata[key]
+
+        raise KeyError(f"Key {key} not found in maindata")
 
     # Method to fetch all torrents and cache for up to a minute
     def get_torrents(self, force=False):
@@ -99,22 +107,49 @@ class QBManager:
 
         if untagged_torrents:
             self.logger.info(f"Checking for synced torrents...")
+            tagged = 0
             for torrent in untagged_torrents:
                 if self.is_synced(torrent):
                     self.logger.info(f"Tagging synced torrent: {torrent['name']}...")
                     self.qb.tag_torrent(torrent['hash'], SYNCED_TAG)
+                    tagged += 1
+
+            if tagged > 0:
+                self.logger.info(f"Tagged {tagged} torrents...")
+                self.get_torrents(force=True)
         else:
             self.logger.info("No untagged torrents...")
 
     def move_torrents(self):
-        config_save_path = self.get_config('save_path')
+        server_state = self.get_maindata('server_state')
+
+        # convert bytes to GB
+        free_space_on_disk_gb = server_state['free_space_on_disk'] / 1073741824.0
+
+        self.logger.info(f"{free_space_on_disk_gb} GB free on destination...")
+
+        popularity_threshold = 0
+        size_threshold = 21474836480 # 20GB
+        seeding_time_threshold = 3600 * 2 # 2 hours
+
+        if free_space_on_disk_gb < 10:
+            self.logger.info(
+                f"Extremely low disk space on destination ({int(free_space_on_disk_gb)}GB), using aggressive values...")
+            popularity_threshold = 50
+            size_threshold = 0
+            seeding_time_threshold = 3600
+        elif free_space_on_disk_gb < 20:
+            self.logger.info(f"Low disk space on destination ({int(free_space_on_disk_gb)}GB), using aggressive values...")
+            popularity_threshold = 0.5
+            size_threshold = 10737418240 # 10GB
+            seeding_time_threshold = 3600 # 1 hour
 
         # Get all stalled torrents that are not popular, are larger than 20GB and have been seeding for more than an hour
         torrents = [t for t in self.get_completed_torrents() if
                     has_synced_tag(t)
-                    and t['popularity'] == 0
-                    and t['size'] > 21474836480
-                    and t['seeding_time'] > 3600]
+                    and t['popularity'] < popularity_threshold
+                    and t['size'] > size_threshold
+                    and t['seeding_time'] > seeding_time_threshold]
 
         if torrents:
             for torrent in torrents:
@@ -154,7 +189,7 @@ class QBManager:
                     time.sleep(1)
 
                 self.qb.remove_torrent(torrent['hash'])
-
+            self.get_torrents(force=True)
         else:
             self.logger.info("No torrents to move...")
 
@@ -220,7 +255,7 @@ class QB:
 
     def remove_torrent(self, torrent_hash):
         response = self.source_session.post(f'{self.source_url}/api/v2/torrents/delete',
-                                            data={'hashes': torrent_hash, 'deleteFiles': 'false'})
+                                            data={'hashes': torrent_hash, 'deleteFiles': 'true'})
         response.raise_for_status()
 
     def move_torrent(self, torrent_hash):
@@ -249,5 +284,10 @@ class QB:
 
     def list_completed_files(self, torrent_hash):
         response = self.source_session.get(f'{self.source_url}/api/v2/torrents/files?hash={torrent_hash}')
+        response.raise_for_status()
+        return response.json()
+
+    def get_maindata(self):
+        response = self.source_session.get(f'{self.source_url}/api/v2/sync/maindata')
         response.raise_for_status()
         return response.json()
