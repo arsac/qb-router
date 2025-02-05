@@ -1,4 +1,2 @@
-python-daemon
-requests
 asyncinotify
-expiringdict
+qbittorrent-api

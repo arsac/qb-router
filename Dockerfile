@@ -8,12 +8,15 @@ RUN pip install --no-cache-dir --prefix=/install --requirement /requirements.txt
 
 FROM base AS app
 WORKDIR /app
-COPY app/ .
-RUN python -m compileall main.py qb/ rsync/
+COPY src/ .
+RUN python -m compileall qbrouter/
 
 FROM base AS final
 RUN apk add --no-cache rsync
 WORKDIR /app
 COPY --from=pip /install /usr/local
 COPY --from=app /app .
-ENTRYPOINT ["python3", "main.py"]
+
+ENV PYTHONPATH "${PYTHONPATH}:/app"
+ENTRYPOINT ["python3", "qbrouter"]
+

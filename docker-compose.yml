@@ -6,20 +6,65 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - shared-data:/data
-      - ./tmp:/dest
-      - ./app:/app
+      - ./tmp/src:/src
+      - ./tmp/dest:/dest
+      - ./src:/app
     environment:
-      - SRC_PATH=/data/
+      - DEBUG=1
+      - SRC_PATH=/src/
       - DEST_PATH=/dest
-      - QB_SRC_URL=https://qb.mlxa.dev
-      - QB_DEST_URL=http://10.0.10.4:30024/
+      - QB_SRC_URL=http://qb-src:8081
+      - QB_SRC_USERNAME=admin
+      - QB_SRC_PASSWORD=V4KuCr9th
+      - QB_DEST_URL=http://qb-dest:8082
+      - QB_DEST_USERNAME=admin
+      - QB_DEST_PASSWORD=ALRcICwJa
+      - MIN_SPACE=20000
+      - MIN_SEEDING_TIME=30
+      - SLEEP=10
+    depends_on:
+      - clean
+      - qb-src
+      - qb-dest
 
-  test:
-    image: busybox
-    command: sh -c "while true; do echo 'test file' > /data/testfile_$(date +%s).txt; sleep 10; done"
+  qb-src:
+    image: lscr.io/linuxserver/qbittorrent:latest
     volumes:
-      - shared-data:/data
+      - ./tmp/src:/downloads
+      - ./tmp/qb-src:/config
+    environment:
+      - WEBUI_PORT=8081
+      - TORRENTING_PORT=9091
+    depends_on:
+      - clean
 
-volumes:
-  shared-data:
+  qb-dest:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    volumes:
+      - ./tmp/dest:/downloads
+      - ./tmp/qb-dest:/config
+    environment:
+      - WEBUI_PORT=8082
+      - TORRENTING_PORT=9092
+
+  clean:
+    image: busybox
+    command: sh -c "ls -la /src && rm -rf /src/* && rm -rf /dest/*"
+    volumes:
+      - ./tmp/src:/src
+      - ./tmp/dest:/dest
+
+  setup-qbittorrent:
+    image: alpine:latest
+    entrypoint: sh -c
+    command:
+      - |-
+        apk add --no-cache curl && \
+        curl -c cookie.txt --header 'Referer: http://qb-src:8081' --data 'username=admin&password=V4KuCr9th' --silent --show-error http://qb-src:8081/api/v2/auth/login && \
+        curl -X POST -b cookie.txt --silent --show-error --data "hashes=9a059ad38b0cd8a50ae8203232b9fbac940b9fac&deleteFiles=true" http://qb-src:8081/api/v2/torrents/delete && \
+        curl -X POST -b cookie.txt --silent --show-error --data "urls=https://archive.org/download/BigBuckBunnyFULLHD60FPS/BigBuckBunnyFULLHD60FPS_archive.torrent" http://qb-src:8081/api/v2/torrents/add && \
+        curl -b cookie.txt --silent --show-error http://qb-src:8081/api/v2/torrents/info && \
+        curl -X post -b cookie.txt http://qb-src:8081/api/v2/torrents/resume?hashes=all
+    depends_on:
+      - qb-src
+      - clean
