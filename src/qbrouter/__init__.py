@@ -62,7 +62,6 @@ def get_parser():
         required=False,
     )
 
-
     parser.add_argument(
         "-Q",
         "--dest-url",
@@ -105,6 +104,14 @@ def get_parser():
     )
 
     parser.add_argument(
+        "--force",
+        action=EnvDefault,
+        envvar="FORCE",
+        help="drain all torrents",
+        required=False,
+    )
+
+    parser.add_argument(
         "--sleep",
         action=EnvDefault,
         envvar="SLEEP",
@@ -124,6 +131,7 @@ def get_config():
     config.min_space = int(config.min_space or 50)
     config.min_seeding_time = int(config.min_seeding_time or 3600)
     config.dry_run = getattr(config, 'dry_run', 'false') == "true"
+    config.force = getattr(config, 'force', 'false') == "true"
     config.sleep = int(config.sleep or 30)
 
     return config

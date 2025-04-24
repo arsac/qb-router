@@ -130,8 +130,12 @@ async def run(config):
 
     async def maybe_move_to_cold():
 
-        if config.run and await fetch_free_space_on_disk_in_gb(src_client) < config.min_space:
-            logger.info(f"Low disk space, attempting to move torrents to {config.dest_url}...")
+        if config.run and ((await fetch_free_space_on_disk_in_gb(src_client) < config.min_space) or config.force):
+            if config.force:
+                logger.info("Forcing move of all torrents to cold storage...")
+            else:
+                logger.info(f"Low disk space, attempting to move torrents to {config.dest_url}...")
+
             save_path = await fetch_save_path(src_client)
             torrents = await fetch_synced_torrents(src_client)
 
@@ -173,7 +177,7 @@ async def run(config):
 
             for torrent_group in sorted(torrent_groups, key=lambda x: (x['popularity'], -x['size'])):
 
-                if torrent_group['seeding_time'] < config.min_seeding_time:
+                if not config.force and torrent_group['seeding_time'] < config.min_seeding_time:
                     logger.info(
                         f"Skipping torrent group {torrent_group['name']} due to low seeding time of {torrent_group['seeding_time']}")
                     continue
