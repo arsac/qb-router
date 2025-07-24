@@ -20,16 +20,16 @@ async def run(config):
     async def rsync():
         logger.debug(f'Rsyncing {src} to {config.dest}')
 
-       # Try with timestamps first, fallback behavior built into rsync
-        await execute(['rsync', '-H', '--ignore-existing', '-vxrpgoDAXS', '--no-times', src, config.dest], logger)
-        await execute(['rsync', '-H', '--inplace', '--checksum', '-vxrpgoDAX', src, config.dest], logger)
+        # Use --no-times to avoid timestamp issues on NFS
+        await execute(['rsync', '-H', '--ignore-existing', '--no-times', '--size-only', '--whole-file', '-vxrpgoDAXS', src, config.dest], logger)
+        await execute(['rsync', '-H', '--inplace', '--no-times', '--size-only', '--whole-file', '-vxrpgoDAX', src, config.dest], logger)
 
     async def worker():
         while config.run or not queue.empty():
             batch = []
             # Accumulate events for at least 5 seconds
             start_time = time.time()
-            while time.time() - start_time < 5:
+            while time.time() - start_time < 15:
                 try:
                     batch.append(await asyncio.wait_for(queue.get(), timeout=5 - (time.time() - start_time)))
                 except asyncio.TimeoutError:
