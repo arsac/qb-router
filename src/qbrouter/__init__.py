@@ -7,14 +7,13 @@ from pathlib import Path
 
 from qbrouter.utils.parser import EnvDefault
 
-logger = logging.getLogger('qbrouter')
+from qbrouter.logger import (
+    logger,
+    get_task_logger,
+    get_contextual_logger,
+    get_adapter_logger,
+)
 
-logging.basicConfig(
-        stream=sys.stdout,
-        level=logging.DEBUG if os.environ.get('DEBUG', None) else logging.INFO,
-        format="%(asctime)s %(levelname)s: %(message)s",
-        datefmt="%I:%M:%S %p",
-    )
 
 def get_parser():
     parser = argparse.ArgumentParser(description="qb-router")
@@ -130,13 +129,17 @@ def get_config():
     config.dest = Path(config.dest)
     config.min_space = int(config.min_space or 50)
     config.min_seeding_time = int(config.min_seeding_time or 3600)
-    config.dry_run = getattr(config, 'dry_run', 'false') == "true"
-    config.force = getattr(config, 'force', 'false') == "true"
+    config.dry_run = getattr(config, "dry_run", "false") == "true"
+    config.force = getattr(config, "force", "false") == "true"
     config.sleep = int(config.sleep or 30)
 
     return config
 
 
 __all__ = [
-    'logger', 'get_config'
+    "logger",
+    "get_config",
+    "get_task_logger",
+    "get_contextual_logger",
+    "get_adapter_logger",
 ]

@@ -1,8 +1,8 @@
 import asyncio
-from asyncio import Event
+from asyncio import Event as AsyncioEvent
 from logging import Logger
 from pathlib import Path
-from typing import Generator, AsyncGenerator
+from typing import Generator, AsyncGenerator, TYPE_CHECKING
 from unittest.mock import Mock
 
 try:
@@ -24,11 +24,16 @@ except AttributeError as e:
     # Ensure the Mask mock supports bitwise operations
     Mask.__or__ = lambda self, other: self
     Mask.__and__ = lambda self, other: self
-    Mask.__contains__ = lambda self, item: item in [Mask.CREATE, Mask.MOVE, Mask.MOVED_FROM, Mask.MOVED_TO,
-                                                    Mask.DELETE_SELF, Mask.IGNORED]
+    Mask.__contains__ = lambda self, item: item in [
+        Mask.CREATE,
+        Mask.MOVE,
+        Mask.MOVED_FROM,
+        Mask.MOVED_TO,
+        Mask.DELETE_SELF,
+        Mask.IGNORED,
+    ]
     Mask.__eq__ = lambda self, other: str(self) == str(other)
-    Mask.__str__ = lambda self: 'Mask'
-
+    Mask.__str__ = lambda self: "Mask"
 
     # Define an async generator method for Inotify mock
     async def mock_inotify_iter():
@@ -36,20 +41,16 @@ except AttributeError as e:
             await asyncio.sleep(10)
             yield Event()
 
-
     Inotify.__aiter__ = lambda self: mock_inotify_iter()
     Inotify.__enter__ = lambda self: self
     Inotify.__exit__ = lambda self, exc_type, exc_val, exc_tb: None
-
 
     def add_watch(path, mask):
         Event.path = path
         return None
 
-
     Inotify.add_watch = add_watch
     Inotify.return_value = Inotify
-
 
     # Define an async generator method for Event mock
     async def mock_event_iter():
@@ -57,10 +58,9 @@ except AttributeError as e:
             await asyncio.sleep(1)
             yield Event()
 
-
     Event.__aiter__ = lambda self: mock_event_iter()
     Event.mask = Mask
-    Event.path = Path('./tmp')
+    Event.path = Path("./tmp")
     Event.return_value = Event
 
 
@@ -75,9 +75,16 @@ async def watch_path(path: Path, logger: Logger) -> AsyncGenerator[Event, None]:
     mask = Mask.CREATE | Mask.MOVE
     with Inotify() as inotify:
         for directory in get_directories_recursive(path):
-            logger.debug(f'init watching {directory}')
-            inotify.add_watch(directory,
-                              mask | Mask.MOVED_FROM | Mask.MOVED_TO | Mask.CREATE | Mask.DELETE_SELF | Mask.IGNORED)
+            logger.debug(f"init watching {directory}")
+            inotify.add_watch(
+                directory,
+                mask
+                | Mask.MOVED_FROM
+                | Mask.MOVED_TO
+                | Mask.CREATE
+                | Mask.DELETE_SELF
+                | Mask.IGNORED,
+            )
 
         async for event in inotify:
 
@@ -88,11 +95,22 @@ async def watch_path(path: Path, logger: Logger) -> AsyncGenerator[Event, None]:
             # get_directories_recursive is depth-first and yields every
             # directory before iterating their children, we know we won't miss
             # anything.
-            if Mask.CREATE in event.mask and event.path is not None and event.path.is_dir():
+            if (
+                Mask.CREATE in event.mask
+                and event.path is not None
+                and event.path.is_dir()
+            ):
                 for directory in get_directories_recursive(event.path):
-                    logger.debug(f'add watching {directory}')
-                    inotify.add_watch(directory,
-                                      mask | Mask.MOVED_FROM | Mask.MOVED_TO | Mask.CREATE | Mask.DELETE_SELF | Mask.IGNORED)
+                    logger.debug(f"add watching {directory}")
+                    inotify.add_watch(
+                        directory,
+                        mask
+                        | Mask.MOVED_FROM
+                        | Mask.MOVED_TO
+                        | Mask.CREATE
+                        | Mask.DELETE_SELF
+                        | Mask.IGNORED,
+                    )
 
             # If there is at least some overlap, assume the user wants this event.
             if event.mask & mask:
@@ -105,5 +123,5 @@ async def watch_path(path: Path, logger: Logger) -> AsyncGenerator[Event, None]:
                 # We don't need to pass IGNORED events up, because the end-user
                 # doesn't have the inotify instance anyway, and IGNORED is just
                 # used for management purposes.
-                logger.debug(f'unyielded event: {event}')
+                logger.debug(f"unyielded event: {event}")
                 # inotify.rm_watch(event.watch)

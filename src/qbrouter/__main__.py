@@ -16,7 +16,9 @@ async def main():
     loop.add_signal_handler(signal.SIGINT, handle_signal)
     loop.add_signal_handler(signal.SIGTERM, handle_signal)
 
-    logger.info("Starting qb-router in dry-run mode" if config.dry_run else "Starting qb-router")
+    logger.info(
+        "Starting qb-router in dry-run mode" if config.dry_run else "Starting qb-router"
+    )
 
     await asyncio.gather(*[task.run(config) for task in get_tasks()])
 

@@ -13,20 +13,16 @@ async def _read_stream(stream, callback):
             break
 
 
-async def execute(args: [str], logger: logging.Logger):
-    process = await create_subprocess_exec(
-        *args, stdout=PIPE, stderr=PIPE
-    )
+async def execute(args: list[str], logger: logging.Logger):
+    process = await create_subprocess_exec(*args, stdout=PIPE, stderr=PIPE)
     await asyncio.gather(
-
-            _read_stream(
-                process.stdout,
-                lambda x: logger.info(x.decode("UTF8")),
-            ),
-            _read_stream(
-                process.stderr,
-                lambda x: logger.error(x.decode("UTF8")),
-            ),
-
+        _read_stream(
+            process.stdout,
+            lambda x: logger.info(x.decode("UTF8")),
+        ),
+        _read_stream(
+            process.stderr,
+            lambda x: logger.error(x.decode("UTF8")),
+        ),
     )
     await process.wait()

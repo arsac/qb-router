@@ -3,9 +3,12 @@ import os
 import time
 from pathlib import Path
 
-from qbrouter import logger
+from qbrouter import get_task_logger
 from qbrouter.utils.exec import execute
 from qbrouter.utils.watcher import watch_path
+
+# Create a task-specific logger
+logger = get_task_logger("rsync")
 
 
 async def run(config):
@@ -29,6 +32,7 @@ async def run(config):
                 "--inplace",
                 "--partial",
                 "--verbose",
+                "--progress",
                 "--one-file-system",
                 "--recursive",
                 "--perms",
