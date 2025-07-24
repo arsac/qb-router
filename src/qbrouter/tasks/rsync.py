@@ -20,7 +20,8 @@ async def run(config):
     async def rsync():
         logger.debug(f'Rsyncing {src} to {config.dest}')
 
-        await execute(['rsync', '-H', '--ignore-existing', '-razv', src, config.dest], logger)
+        await execute(['rsync', '-H', '--ignore-existing', '--size-only', '-vxrpgoDAXS', src, config.dest], logger)
+        await execute(['rsync', '-H', '--inplace', '--size-only', '-vxrpgoDAX', src, config.dest], logger)
 
     async def worker():
         while config.run or not queue.empty():
