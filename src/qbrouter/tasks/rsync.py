@@ -26,6 +26,8 @@ async def run(config):
                 "--hard-links",
                 "--times",
                 "--whole-file",
+                "--inplace",
+                "--partial",
                 "--verbose",
                 "--one-file-system",
                 "--recursive",
