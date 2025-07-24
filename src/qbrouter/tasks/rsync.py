@@ -18,11 +18,13 @@ async def run(config):
     src = os.path.join(config.src, '')
 
     async def rsync():
-        logger.debug(f'Rsyncing {src} to {config.dest}')
+        logger.info(f'Rsyncing {src} to {config.dest}')
 
-        # Use --no-times to avoid timestamp issues on NFS
-        await execute(['rsync', '-H', '--ignore-existing', '--no-times', '--size-only', '--whole-file', '-vxrpgoDAXS', src, config.dest], logger)
-        await execute(['rsync', '-H', '--inplace', '--no-times', '--size-only', '--whole-file', '-vxrpgoDAX', src, config.dest], logger)
+        # Stage 1: New files only, no timestamp issues
+        await execute(['rsync', '-H', '--times', '--ignore-existing', '--size-only', '--whole-file', '-vxrpgoDAXi', src, config.dest], logger)
+
+        # Stage 2: Update existing files based on timestamps
+        await execute(['rsync', '-H', '--times', '--whole-file', '-vxrpgoDAXi', src, config.dest], logger)
 
     async def worker():
         while config.run or not queue.empty():
