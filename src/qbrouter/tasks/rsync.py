@@ -47,19 +47,25 @@ async def run(config):
         ]
 
         if files:
+
+            # Filter out out files that do not exist and make them relative to src
+            files = [
+                os.path.relpath(file, config.src)
+                for file in files
+                if os.path.exists(file) and not os.path.isdir(file)
+            ]
+
+            if not files:
+                logger.info("No files to sync, skipping rsync")
+                return
+
             # Create temporary file with list of files to sync
             with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
                 for file_path in files:
-                    # Check if file still exists before adding to sync list
-                    if os.path.exists(file_path):
-                        # Make path relative to source directory
-                        rel_path = os.path.relpath(file_path, config.src)
-                        f.write(f"{rel_path}\n")
-                    else:
-                        logger.debug(f"Skipping missing file: {file_path}")
+                    f.write(f"{file_path}\n")
                 files_from = f.name
 
-            cmd.extend(["--files-from", files_from])
+            cmd.extend(["--files-from", files_from, "--relative"])
             cmd.extend([src, config.dest])
 
             try:
@@ -122,7 +128,7 @@ async def run(config):
                         f"Dry run: {len(batch)} events for files: {changed_files}"
                     )
                 else:
-                    await rsync("file changes", files=changed_files)
+                    await rsync("file changes")
                     logger.info(f"Processed {len(batch)} file events")
 
     async def watch_and_queue():

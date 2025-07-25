@@ -90,6 +90,21 @@ async def are_torrent_files_synced(
             logger.debug(f"Torrent missing dest file: {dest_torrent_file_path}")
             return False
 
+        # Check if file sizes match
+        try:
+            dest_file_size = dest_torrent_file_path.stat().st_size
+            expected_size = file["size"]
+
+            if dest_file_size != expected_size:
+                logger.debug(
+                    f"File size mismatch for {dest_torrent_file_path}: "
+                    f"expected {expected_size}, got {dest_file_size}"
+                )
+                return False
+        except OSError as e:
+            logger.debug(f"Failed to get file size for {dest_torrent_file_path}: {e}")
+            return False
+
     return True
 
 
